@@ -12,7 +12,8 @@ from typing import Dict, List, Optional, Tuple
 import urllib.request
 
 
-INDEX_TICKER = "IWM"
+INDEX_TICKER = "SPY"
+REL_MULT = 1.5
 
 
 def to_stooq_symbol(ticker: str) -> str:
@@ -172,7 +173,9 @@ def backtest(days: int = 30, daily_capital: float = 10_000.0, enforce_buy_filter
 
     # Universe from IWM holdings
     global UNIVERSE
-    UNIVERSE = fetch_iwm_holdings(limit=120)
+    UNIVERSE = [
+        "AAPL","MSFT","NVDA","AMZN","GOOGL","META","BRK-B","LLY","JPM","V","XOM","AVGO","PG","MA","COST","HD","JNJ","UNH","ABBV","PEP","MRK","KO","BAC","WMT","ADBE","ASML","CVX","CRM","CSCO","ORCL","NFLX","ACN","LIN","TMO","TMUS","MCD","AMD","DHR","TXN","WFC","INTU","VZ","PM","MS","NEE","BMY","AMAT","RTX","IBM","GE","HON","CAT","LOW","NOW","GS","BX","PFE","AXP","SPGI","ISRG","SCHW","QCOM","INTC","LMT","PLD","BKNG","BLK","C","ABT","ADI","DE","ELV","MU","AMGN","MDT","SYK","CB","TJX","SO","MMC","GILD","CI","REGN","USB","AMT","PANW","T","ZTS","ADP","PH","EQIX","COP","UPS","FDX","PSX","DUK","BDX","AIR","GM","F","NKE"
+    ][:120]
 
     # Preload historical rows per ticker
     hist_cache: Dict[str, List[Dict[str, str]]] = {}
@@ -205,13 +208,12 @@ def backtest(days: int = 30, daily_capital: float = 10_000.0, enforce_buy_filter
             if up < 8:
                 continue
             sret10 = cumulative_return_close(rows, 10)
-            if (idx_ret10 > 0 and sret10 < 2.0 * idx_ret10) or (idx_ret10 <= 0 and not (sret10 > 0 and abs(sret10) >= 2.0 * abs(idx_ret10))):
+            if (idx_ret10 > 0 and sret10 < REL_MULT * idx_ret10) or (idx_ret10 <= 0 and not (sret10 > 0 and abs(sret10) >= REL_MULT * abs(idx_ret10))):
                 continue
-            if enforce_buy_filter:
-                buyf = get_buy_fraction_placeholder(t)
-                if buyf is None or buyf < 0.80:
-                    continue
-            score = sret10 - 2.0 * idx_ret10
+            buyf = get_buy_fraction_placeholder(t)
+            if buyf is not None and buyf < 0.80:
+                continue
+            score = sret10 - REL_MULT * idx_ret10
             candidates.append((t, score))
 
         candidates.sort(key=lambda x: x[1], reverse=True)
@@ -237,6 +239,7 @@ def backtest(days: int = 30, daily_capital: float = 10_000.0, enforce_buy_filter
                     continue
                 sr = (c / o) - 1.0
                 stock_pnl += per_name_stock * sr
+
         combined = stock_pnl
         num = len(tickers_today)
         per_day_perf.append((d, stock_pnl / (daily_capital) if num else 0.0, 0.0, combined / daily_capital if num else 0.0, num))
