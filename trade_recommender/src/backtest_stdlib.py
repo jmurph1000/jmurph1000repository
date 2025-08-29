@@ -13,7 +13,8 @@ import urllib.request
 
 
 INDEX_TICKER = "SPY"
-REL_MULT = 1.5
+REL_MULT = 1.2
+MIN_UP_DAYS = 7
 
 
 def to_stooq_symbol(ticker: str) -> str:
@@ -71,12 +72,12 @@ def fetch_stooq_csv(ticker: str) -> List[Dict[str, str]]:
     domains = ["stooq.com", "stooq.pl"]
     headers = {"User-Agent": "Mozilla/5.0", "Accept": "text/csv"}
     last_err: Optional[Exception] = None
-    for attempt in range(6):
+    for attempt in range(2):
         domain = domains[attempt % len(domains)]
         url = f"https://{domain}/q/d/l/?s={sym}&i=d"
         req = urllib.request.Request(url, headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=40) as resp:
+            with urllib.request.urlopen(req, timeout=12) as resp:
                 data = resp.read().decode("utf-8", errors="ignore")
             rows: List[Dict[str, str]] = []
             reader = csv.DictReader(io.StringIO(data))
@@ -87,7 +88,7 @@ def fetch_stooq_csv(ticker: str) -> List[Dict[str, str]]:
         except Exception as e:
             last_err = e
             import time
-            time.sleep(0.7 * (attempt + 1))
+            time.sleep(0.2 * (attempt + 1))
             continue
     if last_err:
         raise last_err
@@ -105,8 +106,8 @@ def rolling_up_days(rows: List[Dict[str, str]], lookback: int) -> int:
     up = 0
     for r in tail:
         try:
-            o = float(r["Open"]) if r["Open"] != "null" else float(r["Adj Close"])
-            c = float(r["Close"]) if r["Close"] != "null" else float(r["Adj Close"])
+            o = float(r["Open"]) 
+            c = float(r["Close"]) 
         except Exception:
             continue
         if c >= o:
@@ -120,7 +121,7 @@ def cumulative_return_close(rows: List[Dict[str, str]], lookback: int) -> float:
     prev = None
     for r in tail:
         try:
-            c = float(r["Adj Close"]) if r["Adj Close"] != "null" else float(r["Close"]) 
+            c = float(r["Close"]) 
         except Exception:
             continue
         if prev is None:
@@ -134,8 +135,8 @@ def cumulative_return_close(rows: List[Dict[str, str]], lookback: int) -> float:
 def intraday_return(rows: List[Dict[str, str]]) -> float:
     r = rows[-1]
     try:
-        o = float(r["Open"]) if r["Open"] != "null" else float(r["Adj Close"]) 
-        c = float(r["Close"]) if r["Close"] != "null" else float(r["Adj Close"]) 
+        o = float(r["Open"]) 
+        c = float(r["Close"]) 
     except Exception:
         return 0.0
     if o == 0:
@@ -174,8 +175,8 @@ def backtest(days: int = 30, daily_capital: float = 10_000.0, enforce_buy_filter
     # Universe from IWM holdings
     global UNIVERSE
     UNIVERSE = [
-        "AAPL","MSFT","NVDA","AMZN","GOOGL","META","BRK-B","LLY","JPM","V","XOM","AVGO","PG","MA","COST","HD","JNJ","UNH","ABBV","PEP","MRK","KO","BAC","WMT","ADBE","ASML","CVX","CRM","CSCO","ORCL","NFLX","ACN","LIN","TMO","TMUS","MCD","AMD","DHR","TXN","WFC","INTU","VZ","PM","MS","NEE","BMY","AMAT","RTX","IBM","GE","HON","CAT","LOW","NOW","GS","BX","PFE","AXP","SPGI","ISRG","SCHW","QCOM","INTC","LMT","PLD","BKNG","BLK","C","ABT","ADI","DE","ELV","MU","AMGN","MDT","SYK","CB","TJX","SO","MMC","GILD","CI","REGN","USB","AMT","PANW","T","ZTS","ADP","PH","EQIX","COP","UPS","FDX","PSX","DUK","BDX","AIR","GM","F","NKE"
-    ][:120]
+        "AAPL","MSFT","NVDA","AMZN","GOOGL","META","BRK-B","LLY","JPM","V","XOM","AVGO","PG","MA","COST","HD","JNJ","UNH","ABBV","PEP","MRK","KO","BAC","WMT","ADBE","ASML","CVX","CRM","CSCO","ORCL","NFLX","ACN","LIN","TMO","TMUS","MCD","AMD","DHR","TXN","WFC"
+    ][:40]
 
     # Preload historical rows per ticker
     hist_cache: Dict[str, List[Dict[str, str]]] = {}
@@ -185,7 +186,7 @@ def backtest(days: int = 30, daily_capital: float = 10_000.0, enforce_buy_filter
             hist_cache[t] = fetch_stooq_csv(t)
         except Exception:
             hist_cache[t] = []
-        time.sleep(0.35)
+        time.sleep(0.05)
 
     for d in backtest_dates:
         # previous day cutoff to avoid lookahead
@@ -205,7 +206,7 @@ def backtest(days: int = 30, daily_capital: float = 10_000.0, enforce_buy_filter
             if len(rows) < 11:
                 continue
             up = rolling_up_days(rows, 10)
-            if up < 8:
+            if up < MIN_UP_DAYS:
                 continue
             sret10 = cumulative_return_close(rows, 10)
             if (idx_ret10 > 0 and sret10 < REL_MULT * idx_ret10) or (idx_ret10 <= 0 and not (sret10 > 0 and abs(sret10) >= REL_MULT * abs(idx_ret10))):
@@ -231,8 +232,8 @@ def backtest(days: int = 30, daily_capital: float = 10_000.0, enforce_buy_filter
                     continue
                 r = rows_full[0]
                 try:
-                    o = float(r["Open"]) if r["Open"] != "null" else float(r["Adj Close"]) 
-                    c = float(r["Close"]) if r["Close"] != "null" else float(r["Adj Close"]) 
+                    o = float(r["Open"]) 
+                    c = float(r["Close"]) 
                 except Exception:
                     continue
                 if o <= 0:
@@ -262,8 +263,8 @@ def main():
         r = idx_by_date.get(d)
         if r:
             try:
-                o = float(r["Open"]) if r["Open"] != "null" else float(r["Adj Close"]) 
-                c = float(r["Close"]) if r["Close"] != "null" else float(r["Adj Close"]) 
+                o = float(r["Open"]) 
+                c = float(r["Close"]) 
                 bench_r = (c / o) - 1.0 if o else 0.0
             except Exception:
                 bench_r = 0.0
