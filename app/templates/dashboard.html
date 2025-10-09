@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Treasury Dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>Treasury Dashboard</h1>
+
+    <section class="uploads">
+      <h2>Upload Daily Cash Balances</h2>
+      <form id="cash-form" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".csv,.xlsx" required />
+        <select name="account_type_hint">
+          <option value="">Infer from file</option>
+          <option value="corporate">Corporate</option>
+          <option value="customer">Customer</option>
+        </select>
+        <input type="hidden" name="email" value="{{ email }}" />
+        <button type="submit">Upload</button>
+      </form>
+      <div id="cash-upload-result" class="result"></div>
+
+      <h2>Upload Security Positions</h2>
+      <form id="sec-form" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".csv,.xlsx" required />
+        <input type="hidden" name="email" value="{{ email }}" />
+        <button type="submit">Upload</button>
+      </form>
+      <div id="sec-upload-result" class="result"></div>
+    </section>
+
+    <section class="balances">
+      <h2>Cash Balances (Last 4 Days)</h2>
+      <div class="alerts">
+        {% if corp_state == 'trending' %}<span class="alert warn">Corporate trending down</span>{% endif %}
+        {% if corp_state == 'negative' %}<span class="alert danger">Corporate negative</span>{% endif %}
+        {% if cust_state == 'trending' %}<span class="alert warn">Customer trending down</span>{% endif %}
+        {% if cust_state == 'negative' %}<span class="alert danger">Customer negative</span>{% endif %}
+      </div>
+      <canvas id="cashChart" height="100"></canvas>
+      <table class="table">
+        <thead><tr><th>Date</th><th>Corporate Total</th><th>Customer Total</th></tr></thead>
+        <tbody>
+          {% for row in cash_series %}
+          {% set corp_neg = row.corporate_total < 0 %}
+          {% set cust_neg = row.customer_total < 0 %}
+          <tr>
+            <td>{{ row.as_of_date }}</td>
+            <td class="{{ 'danger' if corp_neg else ( 'trending' if loop.last and corp_state == 'trending' else '' ) }}">{{ row.corporate_total }}</td>
+            <td class="{{ 'danger' if cust_neg else ( 'trending' if loop.last and cust_state == 'trending' else '' ) }}">{{ row.customer_total }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="securities">
+      <h2>Securities Summary ({{ days[-1] }})</h2>
+      <table class="table">
+        <thead><tr><th>Type</th><th>Total Market Value</th></tr></thead>
+        <tbody>
+          {% for typ, val in security_summary_today.items() %}
+          <tr><td>{{ typ }}</td><td>{{ val }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    {% if email == 'john.murphy@gusto.com' %}
+    <details id="invite-panel" class="invite">
+      <summary>Invite users</summary>
+      <form id="invite-form">
+        <div class="invite-inner">
+          <label for="invite-email">Email</label>
+          <input id="invite-email" name="email" type="email" placeholder="user@example.com" required />
+          <input type="hidden" name="inviter" value="john.murphy@gusto.com" />
+          <button type="submit">Send Invite</button>
+          <span id="invite-result" class="result"></span>
+        </div>
+      </form>
+    </details>
+    {% endif %}
+
+  </div>
+
+<script>
+const cashData = {
+  labels: {{ labels_json | safe }},
+  datasets: [
+    {
+      label: 'Corporate',
+      borderColor: '#2563eb',
+      backgroundColor: 'rgba(37,99,235,0.2)',
+      data: {{ corp_data_json | safe }},
+      tension: 0.3,
+    },
+    {
+      label: 'Customer',
+      borderColor: '#16a34a',
+      backgroundColor: 'rgba(22,163,74,0.2)',
+      data: {{ cust_data_json | safe }},
+      tension: 0.3,
+    }
+  ]
+};
+
+const ctx = document.getElementById('cashChart').getContext('2d');
+const chart = new Chart(ctx, {
+  type: 'line',
+  data: cashData,
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { position: 'top' },
+      title: { display: false },
+    },
+    scales: {
+      y: { beginAtZero: false }
+    }
+  }
+});
+
+// Highlight last point line color: yellow for trending, red for negative
+const corpState = '{{ corp_state }}';
+const custState = '{{ cust_state }}';
+function colorFor(state, base) {
+  if (state === 'negative') return '#ef4444'; // red
+  if (state === 'trending') return '#f59e0b'; // yellow
+  return base;
+}
+chart.data.datasets[0].borderColor = colorFor(corpState, '#2563eb');
+chart.data.datasets[0].backgroundColor = corpState === 'negative' ? 'rgba(239,68,68,0.2)' : (corpState === 'trending' ? 'rgba(245,158,11,0.2)' : 'rgba(37,99,235,0.2)');
+chart.data.datasets[1].borderColor = colorFor(custState, '#16a34a');
+chart.data.datasets[1].backgroundColor = custState === 'negative' ? 'rgba(239,68,68,0.2)' : (custState === 'trending' ? 'rgba(245,158,11,0.2)' : 'rgba(22,163,74,0.2)');
+chart.update();
+
+async function postForm(url, form) {
+  const res = await fetch(url, { method: 'POST', body: new FormData(form) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || 'Upload failed');
+  return data;
+}
+
+const cashForm = document.getElementById('cash-form');
+const cashResult = document.getElementById('cash-upload-result');
+
+cashForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  cashResult.textContent = 'Uploading...';
+  try {
+    const data = await postForm('/upload/cash', cashForm);
+    cashResult.textContent = `Upserted ${data.upserted} rows.`;
+    location.reload();
+  } catch (err) {
+    cashResult.textContent = err.message;
+  }
+});
+
+const secForm = document.getElementById('sec-form');
+const secResult = document.getElementById('sec-upload-result');
+
+secForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  secResult.textContent = 'Uploading...';
+  try {
+    const data = await postForm('/upload/securities', secForm);
+    secResult.textContent = `Upserted ${data.upserted} rows.`;
+    location.reload();
+  } catch (err) {
+    secResult.textContent = err.message;
+  }
+});
+
+// Invite flow
+const inviteForm = document.getElementById('invite-form');
+const inviteResult = document.getElementById('invite-result');
+inviteForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  inviteResult.textContent = 'Sending...';
+  try {
+    const res = await fetch('/invite', { method: 'POST', body: new FormData(inviteForm) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Invite failed');
+    inviteResult.innerHTML = `Invite sent. Acceptance link: <a href="${data.accept_url}">${data.accept_url}</a>`;
+  } catch (err) {
+    inviteResult.textContent = err.message;
+  }
+});
+</script>
+</body>
+</html>
