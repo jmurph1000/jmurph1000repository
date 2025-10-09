@@ -35,20 +35,22 @@
     <section class="balances">
       <h2>Cash Balances (Last 4 Days)</h2>
       <div class="alerts">
-        {% if neg_trend_corp %}<span class="alert warn">Corporate trending negative</span>{% endif %}
-        {% if overdraft_corp %}<span class="alert danger">Corporate near/overdrawn</span>{% endif %}
-        {% if neg_trend_cust %}<span class="alert warn">Customer trending negative</span>{% endif %}
-        {% if overdraft_cust %}<span class="alert danger">Customer near/overdrawn</span>{% endif %}
+        {% if corp_state == 'trending' %}<span class="alert warn">Corporate trending down</span>{% endif %}
+        {% if corp_state == 'negative' %}<span class="alert danger">Corporate negative</span>{% endif %}
+        {% if cust_state == 'trending' %}<span class="alert warn">Customer trending down</span>{% endif %}
+        {% if cust_state == 'negative' %}<span class="alert danger">Customer negative</span>{% endif %}
       </div>
       <canvas id="cashChart" height="100"></canvas>
       <table class="table">
         <thead><tr><th>Date</th><th>Corporate Total</th><th>Customer Total</th></tr></thead>
         <tbody>
           {% for row in cash_series %}
+          {% set corp_neg = row.corporate_total < 0 %}
+          {% set cust_neg = row.customer_total < 0 %}
           <tr>
             <td>{{ row.as_of_date }}</td>
-            <td>{{ row.corporate_total }}</td>
-            <td>{{ row.customer_total }}</td>
+            <td class="{{ 'danger' if corp_neg else ( 'trending' if loop.last and corp_state == 'trending' else '' ) }}">{{ row.corporate_total }}</td>
+            <td class="{{ 'danger' if cust_neg else ( 'trending' if loop.last and cust_state == 'trending' else '' ) }}">{{ row.customer_total }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -90,7 +92,8 @@ const cashData = {
   ]
 };
 
-new Chart(document.getElementById('cashChart'), {
+const ctx = document.getElementById('cashChart').getContext('2d');
+const chart = new Chart(ctx, {
   type: 'line',
   data: cashData,
   options: {
@@ -104,6 +107,20 @@ new Chart(document.getElementById('cashChart'), {
     }
   }
 });
+
+// Highlight last point line color: yellow for trending, red for negative
+const corpState = '{{ corp_state }}';
+const custState = '{{ cust_state }}';
+function colorFor(state, base) {
+  if (state === 'negative') return '#ef4444'; // red
+  if (state === 'trending') return '#f59e0b'; // yellow
+  return base;
+}
+chart.data.datasets[0].borderColor = colorFor(corpState, '#2563eb');
+chart.data.datasets[0].backgroundColor = corpState === 'negative' ? 'rgba(239,68,68,0.2)' : (corpState === 'trending' ? 'rgba(245,158,11,0.2)' : 'rgba(37,99,235,0.2)');
+chart.data.datasets[1].borderColor = colorFor(custState, '#16a34a');
+chart.data.datasets[1].backgroundColor = custState === 'negative' ? 'rgba(239,68,68,0.2)' : (custState === 'trending' ? 'rgba(245,158,11,0.2)' : 'rgba(22,163,74,0.2)');
+chart.update();
 
 async function postForm(url, form) {
   const res = await fetch(url, { method: 'POST', body: new FormData(form) });

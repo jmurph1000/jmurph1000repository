@@ -3,8 +3,6 @@ from __future__ import annotations
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
-
-import pandas as pd
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -73,6 +71,11 @@ async def dashboard(request: Request, db: Session = Depends(get_db)) -> Any:
     corp_data = [float(x) for x in corporate_totals]
     cust_data = [float(x) for x in customer_totals]
 
+    corp_has_negative = any(x < 0 for x in corporate_totals)
+    cust_has_negative = any(x < 0 for x in customer_totals)
+    corp_state = "negative" if corp_has_negative else ("trending" if neg_trend_corp else "normal")
+    cust_state = "negative" if cust_has_negative else ("trending" if neg_trend_cust else "normal")
+
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -89,6 +92,8 @@ async def dashboard(request: Request, db: Session = Depends(get_db)) -> Any:
             "labels_json": json.dumps(labels),
             "corp_data_json": json.dumps(corp_data),
             "cust_data_json": json.dumps(cust_data),
+            "corp_state": corp_state,
+            "cust_state": cust_state,
         },
     )
 
