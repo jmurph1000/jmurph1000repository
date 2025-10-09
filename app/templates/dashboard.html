@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Treasury Dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>Treasury Dashboard</h1>
+
+    <section class="uploads">
+      <h2>Upload Daily Cash Balances</h2>
+      <form id="cash-form" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".csv,.xlsx" required />
+        <select name="account_type_hint">
+          <option value="">Infer from file</option>
+          <option value="corporate">Corporate</option>
+          <option value="customer">Customer</option>
+        </select>
+        <button type="submit">Upload</button>
+      </form>
+      <div id="cash-upload-result" class="result"></div>
+
+      <h2>Upload Security Positions</h2>
+      <form id="sec-form" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".csv,.xlsx" required />
+        <button type="submit">Upload</button>
+      </form>
+      <div id="sec-upload-result" class="result"></div>
+    </section>
+
+    <section class="balances">
+      <h2>Cash Balances (Last 4 Days)</h2>
+      <div class="alerts">
+        {% if neg_trend_corp %}<span class="alert warn">Corporate trending negative</span>{% endif %}
+        {% if overdraft_corp %}<span class="alert danger">Corporate near/overdrawn</span>{% endif %}
+        {% if neg_trend_cust %}<span class="alert warn">Customer trending negative</span>{% endif %}
+        {% if overdraft_cust %}<span class="alert danger">Customer near/overdrawn</span>{% endif %}
+      </div>
+      <canvas id="cashChart" height="100"></canvas>
+      <table class="table">
+        <thead><tr><th>Date</th><th>Corporate Total</th><th>Customer Total</th></tr></thead>
+        <tbody>
+          {% for row in cash_series %}
+          <tr>
+            <td>{{ row.as_of_date }}</td>
+            <td>{{ row.corporate_total }}</td>
+            <td>{{ row.customer_total }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="securities">
+      <h2>Securities Summary ({{ days[-1] }})</h2>
+      <table class="table">
+        <thead><tr><th>Type</th><th>Total Market Value</th></tr></thead>
+        <tbody>
+          {% for typ, val in security_summary_today.items() %}
+          <tr><td>{{ typ }}</td><td>{{ val }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+  </div>
+
+<script>
+const cashData = {
+  labels: {{ labels_json | safe }},
+  datasets: [
+    {
+      label: 'Corporate',
+      borderColor: '#2563eb',
+      backgroundColor: 'rgba(37,99,235,0.2)',
+      data: {{ corp_data_json | safe }},
+      tension: 0.3,
+    },
+    {
+      label: 'Customer',
+      borderColor: '#16a34a',
+      backgroundColor: 'rgba(22,163,74,0.2)',
+      data: {{ cust_data_json | safe }},
+      tension: 0.3,
+    }
+  ]
+};
+
+new Chart(document.getElementById('cashChart'), {
+  type: 'line',
+  data: cashData,
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { position: 'top' },
+      title: { display: false },
+    },
+    scales: {
+      y: { beginAtZero: false }
+    }
+  }
+});
+
+async function postForm(url, form) {
+  const res = await fetch(url, { method: 'POST', body: new FormData(form) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail || 'Upload failed');
+  return data;
+}
+
+const cashForm = document.getElementById('cash-form');
+const cashResult = document.getElementById('cash-upload-result');
+
+cashForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  cashResult.textContent = 'Uploading...';
+  try {
+    const data = await postForm('/upload/cash', cashForm);
+    cashResult.textContent = `Upserted ${data.upserted} rows.`;
+    location.reload();
+  } catch (err) {
+    cashResult.textContent = err.message;
+  }
+});
+
+const secForm = document.getElementById('sec-form');
+const secResult = document.getElementById('sec-upload-result');
+
+secForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  secResult.textContent = 'Uploading...';
+  try {
+    const data = await postForm('/upload/securities', secForm);
+    secResult.textContent = `Upserted ${data.upserted} rows.`;
+    location.reload();
+  } catch (err) {
+    secResult.textContent = err.message;
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+* { box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 0; background: #0b1220; color: #e5e7eb; }
+.container { max-width: 1000px; margin: 0 auto; padding: 24px; }
+h1 { margin: 0 0 12px; font-size: 28px; }
+section { background: #111827; padding: 16px; border-radius: 8px; margin-bottom: 16px; border: 1px solid #1f2937; }
+h2 { margin-top: 0; font-size: 18px; }
+form { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+input, select, button { padding: 8px 10px; border-radius: 6px; border: 1px solid #374151; background: #0b1220; color: #e5e7eb; }
+button { background: #1f2937; cursor: pointer; }
+button:hover { background: #374151; }
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { text-align: left; padding: 8px; border-top: 1px solid #1f2937; }
+.alerts { display: flex; gap: 10px; margin-bottom: 8px; }
+.alert { padding: 4px 8px; border-radius: 6px; font-size: 12px; }
+.alert.warn { background: #78350f; color: #fde68a; }
+.alert.danger { background: #7f1d1d; color: #fecaca; }
+.result { font-size: 12px; color: #9ca3af; }
