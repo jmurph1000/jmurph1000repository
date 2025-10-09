@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Payment Request</title>
+    <style>
+      body { background: #e6ffe6; color: #0a2a66; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+      .container { max-width: 800px; margin: 4vh auto; background: white; padding: 24px; border-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,0.06); }
+      .tag { display:inline-block; padding: 4px 8px; background: #eef2ff; color: #1d4ed8; border-radius: 999px; font-size: 12px; }
+      .row { display:flex; gap: 16px; }
+      .col { flex: 1; }
+      .muted { opacity: 0.8; }
+      form.inline { display:inline; margin-right: 8px; }
+      button { background: #1d4ed8; color: white; border: 0; padding: 6px 10px; border-radius: 8px; font-weight: 700; cursor: pointer; }
+      .danger { background: #b91c1c; }
+      .success { background: #15803d; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>Payment Request</h2>
+      <div class="row">
+        <div class="col">
+          <div><span class="muted">Category:</span> <strong><%= payment.category %></strong></div>
+          <% if (payment.fundingType) { %>
+            <div><span class="muted">Funding Type:</span> <strong><%= payment.fundingType %></strong></div>
+          <% } %>
+          <div><span class="muted">Amount:</span> <strong>$<%= Number(payment.amount).toLocaleString() %></strong></div>
+          <div><span class="muted">Reason:</span> <%= payment.reason %></div>
+          <div><span class="muted">Submitted:</span> <%= new Date(payment.submissionDate).toLocaleString() %></div>
+          <div><span class="muted">Status:</span> <span class="tag"><%= payment.status %></span></div>
+          <div><span class="muted">Required Approvals:</span> <%= payment.requiredApprovals %></div>
+          <% if (payment.varianceFlag) { %><div class="tag">Variance > 5%</div><% } %>
+          <% if (payment.duplicateFlag) { %><div class="tag">Potential Duplicate</div><% } %>
+        </div>
+      </div>
+
+      <h3>Approvals</h3>
+      <ul>
+        <% for (const a of payment.approvals) { %>
+          <li><strong><%= a.reviewer.name %></strong>: <%= a.decision %> at <%= new Date(a.createdAt).toLocaleString() %></li>
+        <% } %>
+      </ul>
+
+      <div>
+        <form class="inline" method="post" action="/requests/<%= payment.id %>/approve">
+          <button type="submit" class="success">Approve</button>
+        </form>
+        <form class="inline" method="post" action="/requests/<%= payment.id %>/reject">
+          <button type="submit" class="danger">Reject</button>
+        </form>
+      </div>
+
+      <% if (payment.status === 'PENDING_TREASURY') { %>
+        <h3>Treasury Actions</h3>
+        <form class="inline" method="post" action="/requests/<%= payment.id %>/treasury-approve">
+          <button type="submit" class="success">Treasury Approve</button>
+        </form>
+        <form class="inline" method="post" action="/requests/<%= payment.id %>/treasury-reject">
+          <button type="submit" class="danger">Treasury Reject</button>
+        </form>
+      <% } %>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gusto Treasury Payments</title>
+    <style>
+      :root { --bg: #e6ffe6; --text: #0a2a66; --panel: #ffffff; --accent: #1d4ed8; }
+      html, body { height: 100%; }
+      body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+      .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+      header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+      .card { background: var(--panel); border-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,0.06); padding: 20px; margin-bottom: 16px; }
+      h1, h2, h3 { margin: 0 0 10px; }
+      .muted { color: #274b8a; opacity: 0.8; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+      footer { position: fixed; left: 16px; bottom: 16px; font-size: 12px; }
+      a.button { display: inline-block; padding: 10px 14px; border-radius: 8px; background: var(--accent); color: white; text-decoration: none; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Gusto Treasury Payments</h1>
+        <nav>
+          <% if (user) { %>
+            <a class="button" href="/me/requests">My Requests</a>
+            <a class="button" href="/approvals">Approvals</a>
+            <a class="button" href="/treasury">Treasury</a>
+            <form method="post" action="/logout" style="display:inline"><button class="button" type="submit">Logout</button></form>
+          <% } else { %>
+            <a class="button" href="/login">Login</a>
+          <% } %>
+        </nav>
+      </header>
+
+      <div class="grid">
+        <section class="card">
+          <h2>Funding Requests</h2>
+          <p class="muted">Initiate and track internal, Mexico, Canada, and other funding.</p>
+          <% if (user) { %>
+            <a class="button" href="/requests/new/funding">New Funding Request</a>
+          <% } %>
+        </section>
+        <section class="card">
+          <h2>AP Payments</h2>
+          <p class="muted">Accounts Payable funding requests (separate box).</p>
+          <% if (user) { %>
+            <a class="button" href="/requests/new/ap">New AP Funding</a>
+          <% } %>
+        </section>
+      </div>
+
+      <section class="card">
+        <h2>Specific Payments</h2>
+        <p class="muted">One-off payments to individuals or entities.</p>
+        <% if (user) { %>
+          <a class="button" href="/requests/new/specific">New Specific Payment</a>
+        <% } %>
+      </section>
+
+      <footer>
+        <% if (isTreasury) { %>
+          <a class="button" href="/admin/access">User access governance</a>
+        <% } else { %>
+          <span class="muted">Access governance (Treasury-only) will appear here.</span>
+        <% } %>
+      </footer>
+    </div>
+  </body>
+</html>

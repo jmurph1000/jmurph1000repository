@@ -1,0 +1,127 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Application roles grant broad access; fine-grained capabilities control per-category actions.
+enum RoleType {
+  ADMIN
+  TREASURY
+  INITIATOR
+  APPROVER
+  VIEWER
+}
+
+/// Payment categories shown in the UI
+enum PaymentCategory {
+  FUNDING      // general treasury funding request
+  AP_FUNDING   // accounts payable funding request
+  SPECIFIC     // one-off specific payment
+}
+
+/// Sub-type for FUNDING requests only
+enum FundingType {
+  INTERNAL_PAYROLL
+  MEXICO_PAYROLL
+  CANADA_PAYROLL
+  CANADA_EMPLOYEE_SPECIFIC
+  OTHER
+}
+
+/// Payment workflow state machine (simplified)
+enum PaymentStatus {
+  SUBMITTED
+  PENDING_APPROVAL
+  PENDING_SECOND_APPROVAL
+  PENDING_TREASURY
+  APPROVED
+  REJECTED
+  TREASURY_APPROVED
+  TREASURY_REJECTED
+}
+
+/// Approval decision for each reviewer
+enum ApprovalDecision {
+  APPROVE
+  REJECT
+}
+
+/// Capability indicates if a user may initiate or approve for a category
+enum CapabilityType {
+  INITIATE
+  APPROVE
+  BOTH
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  roles        UserRole[]
+  capabilities Capability[]
+  payments     Payment[]        @relation("UserPayments")
+  approvals    Approval[]
+}
+
+model UserRole {
+  id     String   @id @default(cuid())
+  user   User     @relation(fields: [userId], references: [id])
+  userId String
+  role   RoleType
+
+  @@unique([userId, role])
+}
+
+/// Fine-grained authorization per category
+model Capability {
+  id        String           @id @default(cuid())
+  user      User             @relation(fields: [userId], references: [id])
+  userId    String
+  category  PaymentCategory
+  type      CapabilityType   // INITIATE, APPROVE, or BOTH
+
+  @@unique([userId, category])
+}
+
+model Payment {
+  id                 String           @id @default(cuid())
+  category           PaymentCategory
+  fundingType        FundingType?
+  amount             Decimal
+  reason             String
+  submissionDate     DateTime         @default(now())
+  status             PaymentStatus    @default(SUBMITTED)
+  requiredApprovals  Int              @default(1)
+  varianceFlag       Boolean          @default(false)
+  duplicateFlag      Boolean          @default(false)
+
+  createdBy          User             @relation("UserPayments", fields: [createdById], references: [id])
+  createdById        String
+
+  approvals          Approval[]
+}
+
+model Approval {
+  id         String           @id @default(cuid())
+  payment    Payment          @relation(fields: [paymentId], references: [id])
+  paymentId  String
+  reviewer   User             @relation(fields: [reviewerId], references: [id])
+  reviewerId String
+  decision   ApprovalDecision
+  createdAt  DateTime         @default(now())
+
+  @@unique([paymentId, reviewerId])
+}
