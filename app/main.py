@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from decimal import Decimal
 from typing import Any
+import os
+import smtplib
+from email.message import EmailMessage
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 import json
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from .crud import (
@@ -20,6 +23,7 @@ from .crud import (
     upsert_security_positions_from_records,
 )
 from .db import Base, SessionLocal, engine
+from .models import Invite, User
 from .utils import (
     normalize_cash_records,
     normalize_securities_records,
@@ -52,6 +56,15 @@ def health() -> dict[str, str]:
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, db: Session = Depends(get_db)) -> Any:
+    # Gate access: allow if a User exists and is_accepted for this session's email (simplified demo: via query ?email=...)
+    # In production, use proper auth with sessions. Here, we support invite acceptance link with token.
+    email = request.query_params.get("email")
+    if email:
+        user = db.scalar(select(User).where(User.email == email))
+        if not user or not user.is_accepted:
+            return HTMLResponse("Access pending. Check your email invite.", status_code=403)
+    else:
+        return HTMLResponse("Email required. Append ?email=you@example.com", status_code=401)
     today = date.today()
     days = [today - timedelta(days=i) for i in range(0, 4)]
     days.sort()
@@ -80,6 +93,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)) -> Any:
         "dashboard.html",
         {
             "request": request,
+            "email": email,
             "days": days,
             "cash_series": cash_series,
             "corporate_totals": corporate_totals,
@@ -103,7 +117,12 @@ async def upload_cash(
     db: Session = Depends(get_db),
     file: UploadFile = File(...),
     account_type_hint: str | None = Form(None),
+    email: str | None = Form(None),
 ) -> dict[str, Any]:
+    if email:
+        user = db.scalar(select(User).where(User.email == email))
+        if not user or not user.is_accepted:
+            raise HTTPException(status_code=403, detail="Access pending or denied")
     content = await file.read()
     try:
         records = read_spreadsheet_to_records(content, file.filename)
@@ -118,7 +137,12 @@ async def upload_cash(
 async def upload_securities(
     db: Session = Depends(get_db),
     file: UploadFile = File(...),
+    email: str | None = Form(None),
 ) -> dict[str, Any]:
+    if email:
+        user = db.scalar(select(User).where(User.email == email))
+        if not user or not user.is_accepted:
+            raise HTTPException(status_code=403, detail="Access pending or denied")
     content = await file.read()
     try:
         records = read_spreadsheet_to_records(content, file.filename)
@@ -136,6 +160,81 @@ async def trends_cash(db: Session = Depends(get_db)) -> Any:
     days.sort()
     series = get_cash_totals_by_type_for_dates(db, days)
     return {"days": [d.isoformat() for d in days], "series": series}
+
+
+def _generate_token() -> str:
+    import secrets
+
+    return secrets.token_urlsafe(24)
+
+
+def _send_invite_email(recipient: str, token: str) -> None:
+    base_url = os.environ.get("BASE_URL", "http://localhost:8000")
+    accept_url = f"{base_url}/accept?token={token}"
+    sender = os.environ.get("EMAIL_FROM", os.environ.get("SMTP_USER", "no-reply@example.com"))
+    host = os.environ.get("SMTP_HOST")
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    user = os.environ.get("SMTP_USER")
+    password = os.environ.get("SMTP_PASSWORD")
+    if not host or not user or not password:
+        # SMTP not configured; skip sending
+        return
+    msg = EmailMessage()
+    msg["Subject"] = "You're invited to Treasury Dashboard"
+    msg["From"] = sender
+    msg["To"] = recipient
+    msg.set_content(f"You have been invited to access the Treasury Dashboard. Click to accept: {accept_url}")
+    with smtplib.SMTP(host, port) as s:
+        s.starttls()
+        s.login(user, password)
+        s.send_message(msg)
+
+
+@app.post("/invite")
+async def invite_user(email: str = Form(...), inviter: str = Form(...), db: Session = Depends(get_db)) -> Any:
+    # Only allow specific inviter email per request
+    if inviter.lower() != "john.murphy@gusto.com":
+        raise HTTPException(status_code=403, detail="Only the owner can invite users")
+
+    # Upsert user (inactive until accepted)
+    user = db.scalar(select(User).where(User.email == email))
+    if not user:
+        user = User(email=email, is_active=True, is_accepted=False)
+        db.add(user)
+        db.flush()
+
+    # Create invite token
+    token = _generate_token()
+    invite = Invite(email=email, token=token, invited_by_email=inviter, created_at=datetime.utcnow())
+    db.add(invite)
+    db.commit()
+
+    # Attempt to send email (optional if SMTP configured); always return acceptance URL
+    try:
+        _send_invite_email(email, token)
+    except Exception:
+        pass
+    base_url = os.environ.get("BASE_URL", "")
+    accept_url = (base_url + "/accept?token=" + token) if base_url else ("/accept?token=" + token)
+    return {"status": "ok", "accept_url": accept_url}
+
+
+@app.get("/accept")
+async def accept_invite(token: str, db: Session = Depends(get_db)) -> Any:
+    invite = db.scalar(select(Invite).where(Invite.token == token, Invite.is_used == False))
+    if not invite:
+        raise HTTPException(status_code=400, detail="Invalid or used token")
+    user = db.scalar(select(User).where(User.email == invite.email))
+    if not user:
+        user = User(email=invite.email, is_active=True, is_accepted=True, accepted_at=datetime.utcnow())
+        db.add(user)
+    else:
+        user.is_accepted = True
+        user.accepted_at = datetime.utcnow()
+    invite.is_used = True
+    db.commit()
+    # Redirect to dashboard with email parameter
+    return RedirectResponse(url=f"/?email={user.email}", status_code=302)
 
 
 @app.on_event("startup")

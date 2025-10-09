@@ -73,3 +73,18 @@ class BalanceTrendPoint(BaseModel):
 class SecuritySummaryPoint(BaseModel):
     as_of_date: date
     totals_by_type: dict[str, Decimal]
+
+
+class InviteCreate(BaseModel):
+    email: str
+
+
+class InviteRead(BaseModel):
+    email: str
+    token: str
+
+
+class UserRead(BaseModel):
+    email: str
+    is_active: bool
+    is_accepted: bool

@@ -20,6 +20,7 @@
           <option value="corporate">Corporate</option>
           <option value="customer">Customer</option>
         </select>
+        <input type="hidden" name="email" value="{{ email }}" />
         <button type="submit">Upload</button>
       </form>
       <div id="cash-upload-result" class="result"></div>
@@ -27,6 +28,7 @@
       <h2>Upload Security Positions</h2>
       <form id="sec-form" enctype="multipart/form-data">
         <input type="file" name="file" accept=".csv,.xlsx" required />
+        <input type="hidden" name="email" value="{{ email }}" />
         <button type="submit">Upload</button>
       </form>
       <div id="sec-upload-result" class="result"></div>
@@ -68,6 +70,21 @@
         </tbody>
       </table>
     </section>
+
+    {% if email == 'john.murphy@gusto.com' %}
+    <details id="invite-panel" class="invite">
+      <summary>Invite users</summary>
+      <form id="invite-form">
+        <div class="invite-inner">
+          <label for="invite-email">Email</label>
+          <input id="invite-email" name="email" type="email" placeholder="user@example.com" required />
+          <input type="hidden" name="inviter" value="john.murphy@gusto.com" />
+          <button type="submit">Send Invite</button>
+          <span id="invite-result" class="result"></span>
+        </div>
+      </form>
+    </details>
+    {% endif %}
 
   </div>
 
@@ -156,6 +173,22 @@ secForm.addEventListener('submit', async (e) => {
     location.reload();
   } catch (err) {
     secResult.textContent = err.message;
+  }
+});
+
+// Invite flow
+const inviteForm = document.getElementById('invite-form');
+const inviteResult = document.getElementById('invite-result');
+inviteForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  inviteResult.textContent = 'Sending...';
+  try {
+    const res = await fetch('/invite', { method: 'POST', body: new FormData(inviteForm) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Invite failed');
+    inviteResult.innerHTML = `Invite sent. Acceptance link: <a href="${data.accept_url}">${data.accept_url}</a>`;
+  } catch (err) {
+    inviteResult.textContent = err.message;
   }
 });
 </script>
